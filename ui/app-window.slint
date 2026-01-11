@@ -1,17 +1,207 @@
-import { Button, VerticalBox } from "std-widgets.slint";
+import {
+    LineEdit,
+    Button,
+    Slider,
+    HorizontalBox,
+    VerticalBox,
+    ProgressIndicator,
+} from "std-widgets.slint";
 
-export component AppWindow inherits Window {
-    in-out property <int> counter: 42;
-    callback request-increase-value();
-    VerticalBox {
-        Text {
-            text: "Counter: \{root.counter}";
+export component MainWindow inherits Window {
+    no-frame: true; // 无边框窗口 默认false有边框
+    title: "雪球";
+    width: 300px;
+    height: 40px;
+    always-on-top: true;
+    in-out property <int> total-time: 10;
+    in-out property <int> elapsed-seconds: 0;
+    in-out property <bool> is-time-running: false;
+    in-out property <string> label-str: "Start";
+    in-out property <string> current-time: "00:00:00";
+    in-out property <string> input-time;
+
+    // 记录按下的位置
+    property <length> drag-area-down-x: 0;
+    property <length> drag-area-down-y: 0;
+    // 是否按下了鼠标
+    property <bool> drag-area-pressed: false;
+    // 新增：记录按下时的窗口位置（由 Rust 提供）    
+    property <length> menu-x: 0px;
+    property <length> menu-y: 0px;
+    callback start-drag(length, length); // 通知 Rust 记录当前窗口位置
+    // 调用Rust代码移动窗口
+    callback move-window(length, length);
+    callback window-colse();
+    property <int> current-page: 0;
+    callback timer-finished();
+    Timer {
+        interval: 1s;
+        running: root.is-time-running;
+        triggered => {
+            root.elapsed-seconds += 1;
+            if (root.elapsed-seconds == root.total-time) {
+                root.timer-finished();
+                root.is-time-running = false;
+                root.label-str = "Finished!";
+            }
+        }
+    }
+
+    popup := PopupWindow {
+        x: root.menu-x + 30px;
+        y: root.menu-y;
+        height: 20px;
+        width: 60px;
+        Rectangle {
+            height: 100%;
+            width: 100%;
+            background: #ffffff;
+            Button {
+                icon-size: 20px;
+                icon: @image-url("../images/close-bold-svgrepo-com.svg");
+                clicked => {
+                    root.window-colse();
+                }
+            }
+        }
+    }
+
+    HorizontalLayout {
+        // 功能区
+        Rectangle {
+            width: root.width - 45px;
+            height: root.height;
+            VerticalLayout {
+                height: 2 * (root.width - 45px);
+                property <length> position: - root.current-page * (root.width - 45px);
+                y: position;
+                animate y {
+                    duration: 200ms;
+                    easing: ease-in-out;
+                }
+                // 倒计时 按照分钟
+                HorizontalLayout {
+                    width: root.width - 45px;
+                    // 输入框
+                    LineEdit {
+                        width: root.width - 210px;
+                        input-type: number;
+                        placeholder-text: "分钟";
+                        font-size: 25px;
+                        text <=> root.input-time;
+                    }
+                    // 倒计时
+                    Text {
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                        font-size: 30px;
+                        text: root.elapsed-seconds + "s";
+                        TouchArea {
+                            pointer-event(ev) => {
+                                if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.left) {
+                                    root.drag-area-pressed = true;
+                                    root.drag-area-down-x = self.mouse-x; // 记录按下瞬间的位置
+                                    root.drag-area-down-y = self.mouse-y;
+                                    root.start-drag(self.mouse-x, self.mouse-y);
+                                } else if (ev.kind == PointerEventKind.up && ev.button == PointerEventButton.left) {
+                                    root.drag-area-pressed = false;
+                                }
+                                if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.right) {
+                                    //ev.accept(); // 可选：阻止默认行为
+                                    root.menu-x = self.mouse-x;
+                                    root.menu-y = self.mouse-y;
+                                    popup.show();
+                                }
+                            }
+                            moved => {
+                                if (root.drag-area-pressed) {
+                                    // ✅ 关键：不要更新 drag-area-down-x/y！
+                                    let dx = self.mouse-x - root.drag-area-down-x;
+                                    let dy = self.mouse-y - root.drag-area-down-y;
+                                    root.move-window(dx, dy);
+                                }
+                            }
+                        }
+                    }
+                    // 开始结束按钮
+                    Button {
+                        width: 90px;
+                        height: 40px;
+                        text: root.label-str;
+                        clicked => {
+                            if (root.label-str == "Reset") {
+                                root.label-str = "Start";
+                                root.is-time-running = false;
+                                root.elapsed-seconds = 0;
+                            } else if (root.label-str == "Start") {
+                                root.label-str = "Reset";
+                                root.total-time = root.input-time == 0 ? root.total-time : root.input-time.to-float() * 60;
+                                root.is-time-running = true;
+                            } else if (root.label-str == "Finished!") {
+                                root.label-str = "Reset";
+                                root.is-time-running = false;
+                                root.total-time = 0;
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: root.width - 45px;
+                    Text {
+                        text: root.current-time;
+                        font-size: 30px;
+                        TouchArea {
+                            pointer-event(ev) => {
+                                if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.left) {
+                                    root.drag-area-pressed = true;
+                                    root.drag-area-down-x = self.mouse-x; // 记录按下瞬间的位置
+                                    root.drag-area-down-y = self.mouse-y;
+                                    root.start-drag(self.mouse-x, self.mouse-y);
+                                } else if (ev.kind == PointerEventKind.up && ev.button == PointerEventButton.left) {
+                                    root.drag-area-pressed = false;
+                                }
+                                if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.right) {
+                                    //ev.accept(); // 可选：阻止默认行为
+                                    root.menu-x = self.mouse-x;
+                                    root.menu-y = self.mouse-y;
+                                    popup.show();
+                                }
+                            }
+                            moved => {
+                                if (root.drag-area-pressed) {
+                                    // ✅ 关键：不要更新 drag-area-down-x/y！
+                                    let dx = self.mouse-x - root.drag-area-down-x;
+                                    let dy = self.mouse-y - root.drag-area-down-y;
+                                    root.move-window(dx, dy);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        Button {
-            text: "Increase value";
-            clicked => {
-                root.request-increase-value();
+        // 切换功能
+        VerticalLayout {
+            Button {
+                width: 45px;
+                height: 20px;
+                icon: @image-url("../images/angle-up-svgrepo-com.svg");
+                enabled: root.current-page > 0;
+                clicked => {
+                    root.current-page -= 1;
+                }
+            }
+
+            Button {
+                width: 45px;
+                height: 20px;
+                icon: @image-url("../images/angle-down-svgrepo-com.svg");
+                enabled: root.current-page < 1;
+                clicked => {
+                    root.current-page += 1;
+                }
             }
         }
     }
