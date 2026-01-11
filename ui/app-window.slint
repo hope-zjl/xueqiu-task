@@ -135,7 +135,8 @@ export component MainWindow inherits Window {
                                 root.elapsed-seconds = 0;
                             } else if (root.label-str == "Start") {
                                 root.label-str = "Reset";
-                                root.total-time = root.input-time == 0 ? root.total-time : root.input-time.to-float() * 60;
+                                root.total-time = root.input-time == "" ? root.total-time : root.input-time.to-float() * 60;
+                                root.total-time = root.total-time == 0 ? 10 : root.total-time;
                                 root.is-time-running = true;
                             } else if (root.label-str == "Finished!") {
                                 root.label-str = "Reset";

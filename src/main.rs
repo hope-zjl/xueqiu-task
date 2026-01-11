@@ -81,7 +81,7 @@ fn setup_callbacks(window: &MainWindow, _weak_window: &Weak<MainWindow>) {
             .body("定时任务结束！")
             .icon("thunderbird")
             .appname("thunderbird")
-            .sound_name("reminder")
+            .sound_name("Alarm")
             .timeout(0)
             .show()
             .unwrap();
