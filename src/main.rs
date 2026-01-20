@@ -1,11 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use std::{
     sync::{Arc, Mutex},
-    time::Duration,
-    time::Instant,
+    thread,
+    time::{Duration, Instant},
 };
 
 use notify_rust::Notification;
+use regex::Regex;
+use rss::Channel;
 // 导入正确的类型
 use slint::{ComponentHandle, Timer, ToSharedString, Weak};
 
@@ -70,6 +72,39 @@ fn setup_and_run_app() -> Result<(), slint::PlatformError> {
     });
 
     let _timer_time = get_current_date(&main_window);
+
+    let weak_for_weather = weak_window.clone();
+    thread::spawn(move || {
+        // 这里是普通的同步代码，没有 .await！
+        let result = fetch_weather_blocking(); // <-- 新函数
+
+        // 通过 Slint 的 invoke_from_event_loop 回到主线程更新 UI
+        slint::invoke_from_event_loop(move || {
+            if let Some(window) = weak_for_weather.upgrade() {
+                match result {
+                    Ok(weather_text) => {
+                        // 假设你有一个 weather_info 属性
+                        let re = Regex::new(r"溫度:\s*([0-9]+\s*~\s*[0-9]+).*?降雨機率:\s*(\d+%)")
+                            .unwrap();
+                        if let Some(caps) = re.captures(weather_text.as_str()) {
+                            let temperature = caps.get(1).map(|m| m.as_str().to_string()).unwrap();
+                            let rain_prob = caps.get(2).map(|m| m.as_str().to_string()).unwrap();
+                            let result = format!("温度:{},降水概率:{}",temperature, rain_prob);
+                            window.set_weather_info(result.into());
+                        } else {
+                            window.set_weather_info("正则失败".into());
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("获取天气失败: {}", e);
+                        window.set_weather_info("加载失败".into());
+                    }
+                }
+            }
+        })
+        .unwrap();
+    });
+
     main_window.run()
 }
 
@@ -112,4 +147,25 @@ fn windows_conse(window: &MainWindow) {
         }
         std::process::exit(0);
     });
+}
+
+fn fetch_weather_blocking() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let url = "https://www.cwa.gov.tw/rss/forecast/36_01.xml";
+
+    // 使用 reqwest 的 blocking 客户端
+    let client = reqwest::blocking::Client::new();
+    let response = client.get(url).send()?; // 同步调用
+    let content = response.bytes()?; // 同步获取字节
+
+    // 解析 RSS
+    let channel = Channel::read_from(&content[..])?;
+
+    // 提取信息
+    if let Some(item) = channel.items().first() {
+        if let Some(title) = item.title() {
+            return Ok(title.to_string());
+        }
+    }
+
+    Ok("暂无数据".to_string())
 }

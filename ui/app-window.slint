@@ -19,6 +19,7 @@ export component MainWindow inherits Window {
     in-out property <string> label-str: "Start";
     in-out property <string> current-time: "00:00:00";
     in-out property <string> input-time;
+    in-out property <string> weather_info;
 
     // 记录按下的位置
     property <length> drag-area-down-x: 0;
@@ -72,8 +73,8 @@ export component MainWindow inherits Window {
             width: root.width - 45px;
             height: root.height;
             VerticalLayout {
-                height: 2 * (root.width - 45px);
-                property <length> position: - root.current-page * (root.width - 45px);
+                height: 3 * root.height;
+                property <length> position: - root.current-page * root.height;
                 y: position;
                 animate y {
                     duration: 200ms;
@@ -81,7 +82,7 @@ export component MainWindow inherits Window {
                 }
                 // 倒计时 按照分钟
                 HorizontalLayout {
-                    width: root.width - 45px;
+                    height: root.height;
                     // 输入框
                     LineEdit {
                         width: root.width - 210px;
@@ -148,10 +149,44 @@ export component MainWindow inherits Window {
                 }
 
                 Rectangle {
-                    width: root.width - 45px;
+                    height: root.height;
                     Text {
                         text: root.current-time;
                         font-size: 30px;
+                        TouchArea {
+                            pointer-event(ev) => {
+                                if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.left) {
+                                    root.drag-area-pressed = true;
+                                    root.drag-area-down-x = self.mouse-x; // 记录按下瞬间的位置
+                                    root.drag-area-down-y = self.mouse-y;
+                                    root.start-drag(self.mouse-x, self.mouse-y);
+                                } else if (ev.kind == PointerEventKind.up && ev.button == PointerEventButton.left) {
+                                    root.drag-area-pressed = false;
+                                }
+                                if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.right) {
+                                    //ev.accept(); // 可选：阻止默认行为
+                                    root.menu-x = self.mouse-x;
+                                    root.menu-y = self.mouse-y;
+                                    popup.show();
+                                }
+                            }
+                            moved => {
+                                if (root.drag-area-pressed) {
+                                    // ✅ 关键：不要更新 drag-area-down-x/y！
+                                    let dx = self.mouse-x - root.drag-area-down-x;
+                                    let dy = self.mouse-y - root.drag-area-down-y;
+                                    root.move-window(dx, dy);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: root.height;
+                    Text {
+                        text: root.weather_info;
+                        font-size: 20px;
                         TouchArea {
                             pointer-event(ev) => {
                                 if (ev.kind == PointerEventKind.down && ev.button == PointerEventButton.left) {
@@ -199,7 +234,7 @@ export component MainWindow inherits Window {
                 width: 45px;
                 height: 20px;
                 icon: @image-url("../images/angle-down-svgrepo-com.svg");
-                enabled: root.current-page < 1;
+                enabled: root.current-page < 2;
                 clicked => {
                     root.current-page += 1;
                 }
